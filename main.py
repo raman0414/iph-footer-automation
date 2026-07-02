@@ -5,12 +5,15 @@ from telegram.ext import (
     Application,
     CommandHandler,
     MessageHandler,
+    CallbackQueryHandler,
     ContextTypes,
     filters,
 )
 
 from config import BOT_TOKEN
 from bot.image_processor import ImageProcessor
+from bot.keyboards import footer_keyboard
+from bot.template_manager import TemplateManager
 
 
 # ---------------------------------------
@@ -25,10 +28,40 @@ os.makedirs("output", exist_ok=True)
 # ---------------------------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
+    current_template = TemplateManager.get_template(
+        update.effective_user.id
+    )
+
     await update.message.reply_text(
-        "🏥 Welcome to IPH Footer Bot!\n\n"
-        "Current Footer: ⭐ Default\n\n"
-        "📷 Send one or more photos and I'll automatically add the footer."
+        "🏥 *IPH Footer Bot*\n\n"
+        f"Current Footer: ⭐ *{current_template.capitalize()}*\n\n"
+        "Select a footer template below.",
+        parse_mode="Markdown",
+        reply_markup=footer_keyboard()
+    )
+
+
+# ---------------------------------------
+# Footer Selected
+# ---------------------------------------
+async def footer_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    query = update.callback_query
+
+    await query.answer()
+
+    template = query.data.replace("footer_", "")
+
+    TemplateManager.set_template(
+        query.from_user.id,
+        template
+    )
+
+    await query.edit_message_text(
+        "✅ *Footer Updated*\n\n"
+        f"Current Footer: ⭐ *{template.capitalize()}*\n\n"
+        "📷 Now send one or more photos.",
+        parse_mode="Markdown"
     )
 
 
@@ -49,11 +82,16 @@ async def receive_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Download image
         await telegram_file.download_to_drive(input_path)
 
+        # Get selected footer
+        template = TemplateManager.get_template(
+            update.effective_user.id
+        )
+
         # Process image
         ImageProcessor.process(
             image_path=input_path,
             output_path=output_path,
-            template="default"
+            template=template
         )
 
         # Send processed image
@@ -61,7 +99,7 @@ async def receive_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             await update.message.reply_photo(
                 photo=processed_image,
-                caption="✅ Footer added successfully!"
+                caption=f"✅ Footer applied\n\nTemplate: ⭐ {template.capitalize()}"
             )
 
     except Exception as e:
@@ -74,7 +112,6 @@ async def receive_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     finally:
 
-        # Delete temporary files
         if os.path.exists(input_path):
             os.remove(input_path)
 
@@ -93,6 +130,13 @@ def main():
         CommandHandler(
             "start",
             start
+        )
+    )
+
+    app.add_handler(
+        CallbackQueryHandler(
+            footer_selected,
+            pattern="^footer_"
         )
     )
 
